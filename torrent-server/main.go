@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	bittorrent "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/types/infohash"
@@ -75,7 +77,21 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		<-torrent.GotInfo()
+		
+		// Wait for torrent info with timeout to prevent infinite blocking
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		
+		select {
+		case <-torrent.GotInfo():
+			// Torrent info received successfully
+		case <-ctx.Done():
+			c.JSON(http.StatusRequestTimeout, gin.H{
+				"error": "Torrent info retrieval timed out after 30 seconds",
+			})
+			return
+		}
+		
 		torrent.VerifyData()
 		response := responses.TorrentToResponse(torrent)
 		c.JSON(http.StatusOK, response)
@@ -131,7 +147,20 @@ func main() {
 			return
 		}
 
-		<-torrent.GotInfo()
+		// Wait for torrent info with timeout to prevent infinite blocking
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		
+		select {
+		case <-torrent.GotInfo():
+			// Torrent info received successfully
+		case <-ctx.Done():
+			c.JSON(http.StatusRequestTimeout, gin.H{
+				"error": "Torrent info retrieval timed out after 30 seconds",
+			})
+			return
+		}
+		
 		var targetFile *bittorrent.File
 		for _, file := range torrent.Files() {
 			if file.Path() == filepath {
