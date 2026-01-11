@@ -24,6 +24,42 @@ type AddTorrentRequest struct {
 	Path string `json:"path"`
 }
 
+// contextReader wraps an io.Reader with context cancellation and timeout
+// to prevent infinite blocking when reading from torrent files
+type contextReader struct {
+	io.Reader
+	ctx     context.Context
+	timeout time.Duration
+}
+
+func (r *contextReader) Read(p []byte) (n int, err error) {
+	// Create a timeout context for this read operation
+	readCtx, cancel := context.WithTimeout(r.ctx, r.timeout)
+	defer cancel()
+	
+	// Channel to receive read result
+	type readResult struct {
+		n   int
+		err error
+	}
+	resultChan := make(chan readResult, 1)
+	
+	// Perform read in goroutine
+	go func() {
+		n, err := r.Reader.Read(p)
+		resultChan <- readResult{n: n, err: err}
+	}()
+	
+	// Wait for either read completion or timeout/cancellation
+	select {
+	case result := <-resultChan:
+		return result.n, result.err
+	case <-readCtx.Done():
+		// Timeout or cancellation occurred
+		return 0, readCtx.Err()
+	}
+}
+
 func main() {
 	var port int
 	var downloadDir string
@@ -62,8 +98,27 @@ func main() {
 
 	r.GET("/torrents", func(c *gin.Context) {
 		torrents := client.Torrents()
-		response := responses.TorrentsToResponse(torrents)
-		c.JSON(http.StatusOK, response)
+		
+		// Convert torrents to responses with timeout protection
+		// Use request context with timeout to prevent blocking
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer cancel()
+		
+		responseChan := make(chan []responses.TorrentResponse, 1)
+		go func() {
+			responseChan <- responses.TorrentsToResponse(torrents)
+		}()
+		
+		select {
+		case response := <-responseChan:
+			c.JSON(http.StatusOK, response)
+		case <-ctx.Done():
+			// Timeout - return partial or empty response
+			log.Printf("Warning: Torrent list retrieval timed out")
+			c.JSON(http.StatusRequestTimeout, gin.H{
+				"error": "Torrent list retrieval timed out",
+			})
+		}
 	})
 
 	r.POST("/torrents", func(c *gin.Context) {
@@ -79,20 +134,40 @@ func main() {
 		}
 		
 		// Wait for torrent info with timeout to prevent infinite blocking
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use request context so client disconnection cancels the operation
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
 		
 		select {
 		case <-torrent.GotInfo():
 			// Torrent info received successfully
 		case <-ctx.Done():
+			// Clean up the torrent if we timed out
+			torrent.Drop()
 			c.JSON(http.StatusRequestTimeout, gin.H{
 				"error": "Torrent info retrieval timed out after 30 seconds",
 			})
 			return
 		}
 		
-		torrent.VerifyData()
+		// VerifyData can also block, so run it with timeout
+		verifyCtx, verifyCancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+		defer verifyCancel()
+		
+		verifyDone := make(chan error, 1)
+		go func() {
+			torrent.VerifyData()
+			verifyDone <- nil
+		}()
+		
+		select {
+		case <-verifyDone:
+			// Verification completed
+		case <-verifyCtx.Done():
+			// Verification timed out, but continue anyway
+			log.Printf("Warning: Torrent verification timed out for %s", json.Path)
+		}
+		
 		response := responses.TorrentToResponse(torrent)
 		c.JSON(http.StatusOK, response)
 	})
@@ -115,6 +190,19 @@ func main() {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Torrent not found"})
 			return
 		}
+		
+		// Ensure torrent has info before getting name (with timeout)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+		
+		select {
+		case <-torrent.GotInfo():
+			// Torrent info available
+		case <-ctx.Done():
+			// Timeout - try to get name anyway, it might work
+			log.Printf("Warning: Torrent info not available when deleting %s", infoHash)
+		}
+		
 		// Get torrent's root directory/files before dropping
 		downloadPath := cfg.DataDir
 		torrentName := torrent.Name()
@@ -148,7 +236,8 @@ func main() {
 		}
 
 		// Wait for torrent info with timeout to prevent infinite blocking
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Use request context so client disconnection cancels the operation
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
 		
 		select {
@@ -205,19 +294,46 @@ func main() {
 		c.Header("Content-Length", fmt.Sprintf("%d", end-start+1))
 		c.Header("Content-Type", getContentType(filepath))
 
-		// Create reader for the specific range
+		// Create reader for the specific range with context cancellation
+		// This ensures the reader can be cancelled if the client disconnects or times out
 		reader := targetFile.NewReader()
 		defer reader.Close()
-		_, err = reader.Seek(start, io.SeekStart)
-		if err != nil {
-			c.String(http.StatusInternalServerError, "Failed to seek to position: %v", err)
+		
+		// Seek with timeout protection
+		seekCtx, seekCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer seekCancel()
+		
+		seekDone := make(chan error, 1)
+		go func() {
+			_, err := reader.Seek(start, io.SeekStart)
+			seekDone <- err
+		}()
+		
+		select {
+		case err := <-seekDone:
+			if err != nil {
+				c.String(http.StatusInternalServerError, "Failed to seek to position: %v", err)
+				return
+			}
+		case <-seekCtx.Done():
+			c.String(http.StatusRequestTimeout, "Seek operation timed out")
 			return
 		}
 
-		// Stream the range
+		// Stream the range with context-aware reader
 		// Create a limited reader to read only the requested range
 		limitedReader := io.LimitReader(reader, end-start+1)
-		c.DataFromReader(http.StatusPartialContent, end-start+1, getContentType(filepath), limitedReader, nil)
+		
+		// Wrap the reader with context cancellation to prevent infinite blocking
+		// Use a shorter timeout per read (10 seconds) - if a single read blocks this long,
+		// something is wrong and we should fail rather than wait indefinitely
+		ctxReader := &contextReader{
+			Reader:  limitedReader,
+			ctx:     c.Request.Context(),
+			timeout: 10 * time.Second, // Maximum time per read operation
+		}
+		
+		c.DataFromReader(http.StatusPartialContent, end-start+1, getContentType(filepath), ctxReader, nil)
 	})
 
 	r.Run(":" + strconv.Itoa(port))
