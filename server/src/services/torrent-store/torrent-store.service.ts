@@ -2,7 +2,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { TorrentSourceManager } from '../torrent-source';
 import { TorrentResponse, TorrentStoreStats } from './types';
 import { env } from '@/env';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
 import { formatBytes } from '@/utils/bytes';
 import { globSync } from 'glob';
 import { TorrentServerSdk } from './torrent-server.sdk';
@@ -23,12 +23,34 @@ export class TorrentStoreService {
         import.meta.dirname,
         '../../../torrent-server/torrent-server',
       );
+      // Set up log file path in the addon directory
+      const logFilePath = join(env.ADDON_DIR, 'torrent-server.log');
+      
       this.torrentServerInstance = spawn(executablePath, [
         '-p',
         `${env.TORRENT_SERVER_PORT}`,
         '-d',
         env.DOWNLOADS_DIR,
+        '-log',
+        logFilePath,
       ]);
+      
+      // Capture and log stdout/stderr from the torrent server
+      this.torrentServerInstance.stdout.on('data', (data) => {
+        console.log(`[TORRENT-SERVER] ${data.toString().trim()}`);
+      });
+      
+      this.torrentServerInstance.stderr.on('data', (data) => {
+        console.error(`[TORRENT-SERVER] ${data.toString().trim()}`);
+      });
+      
+      this.torrentServerInstance.on('error', (error) => {
+        console.error(`[TORRENT-SERVER] Process error:`, error);
+      });
+      
+      this.torrentServerInstance.on('exit', (code, signal) => {
+        console.log(`[TORRENT-SERVER] Process exited with code ${code} and signal ${signal}`);
+      });
     } else {
       let isServerUp = false,
         retryCount = 0;
