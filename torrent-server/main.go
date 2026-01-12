@@ -264,12 +264,7 @@ func main() {
 		infoHashStr := c.Param("infoHash")
 		log.Printf("[GET /torrents/:infoHash] Request for: %s", infoHashStr)
 
-		infoHash, err := infohash.FromHexString(infoHashStr)
-		if err != nil {
-			log.Printf("[GET /torrents/:infoHash] Invalid infoHash: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid infoHash format"})
-			return
-		}
+		infoHash := infohash.FromHexString(infoHashStr)
 
 		torrent, ok := server.client.Torrent(infoHash)
 		if !ok {
@@ -294,12 +289,7 @@ func main() {
 		infoHashStr := c.Param("infoHash")
 		log.Printf("[DELETE /torrents/:infoHash] Request for: %s", infoHashStr)
 
-		infoHash, err := infohash.FromHexString(infoHashStr)
-		if err != nil {
-			log.Printf("[DELETE /torrents/:infoHash] Invalid infoHash: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid infoHash format"})
-			return
-		}
+		infoHash := infohash.FromHexString(infoHashStr)
 
 		torrent, ok := server.client.Torrent(infoHash)
 		if !ok {
@@ -347,12 +337,7 @@ func main() {
 		method := c.Request.Method
 		log.Printf("[%s /torrents/:infoHash/files/*filePath] Request - infoHash: %s, file: %s", method, infoHashStr, filepath)
 
-		infoHash, err := infohash.FromHexString(infoHashStr)
-		if err != nil {
-			log.Printf("[%s /torrents/:infoHash/files/*filePath] Invalid infoHash: %v", method, err)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid infoHash format"})
-			return
-		}
+		infoHash := infohash.FromHexString(infoHashStr)
 
 		torrent, ok := server.client.Torrent(infoHash)
 		if !ok {
