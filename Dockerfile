@@ -16,13 +16,15 @@ COPY ./client/package.json ./client/package.json
 
 
 FROM node-base AS build-base
-RUN npm install -g pnpm
+# Install the Node.js package directly; newer pnpm bootstrappers may try to
+# download a standalone executable unavailable on Alpine ARM64.
+RUN npm install -g pnpm@9.12.2
 
 FROM build-base AS prod-deps
-RUN pnpm install --prod
+RUN pnpm install --frozen-lockfile --prod
 
 FROM build-base AS build-deps
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 FROM build-deps AS build
 COPY . .
