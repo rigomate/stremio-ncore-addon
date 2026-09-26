@@ -12,12 +12,14 @@ type TorrentFile struct {
 }
 
 type TorrentResponse struct {
-	InfoHash   string        `json:"infoHash"`
-	Name       string        `json:"name"`
-	Progress   float64       `json:"progress"`
-	Size       int64         `json:"size"`
-	Downloaded int64         `json:"downloaded"`
-	Files      []TorrentFile `json:"files"`
+	Source        string        `json:"source"`
+	SeededSeconds float64       `json:"seededSeconds"`
+	InfoHash      string        `json:"infoHash"`
+	Name          string        `json:"name"`
+	Progress      float64       `json:"progress"`
+	Size          int64         `json:"size"`
+	Downloaded    int64         `json:"downloaded"`
+	Files         []TorrentFile `json:"files"`
 }
 
 func TorrentToResponse(torrent *bittorrent.Torrent) TorrentResponse {

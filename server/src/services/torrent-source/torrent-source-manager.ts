@@ -22,6 +22,13 @@ export class TorrentSourceManager {
     this.sources = sources.filter((source): source is TorrentSource => source !== null);
   }
 
+  public getDownloadHeaders(sourceName: string): Record<string, string> {
+    return (
+      this.sources.find((source) => source.name === sourceName)?.getDownloadHeaders?.() ??
+      {}
+    );
+  }
+
   public async getRemovableInfoHashes(): Promise<string[]> {
     const promises = this.sources.map(async (source) => source.getRemovableInfoHashes());
     const results = (await awaitAllReachablePromises(promises)).flat();

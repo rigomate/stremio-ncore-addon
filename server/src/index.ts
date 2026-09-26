@@ -16,6 +16,7 @@ import { AuthController } from '@/controllers/auth.controller';
 import { StreamController } from '@/controllers/stream.controller';
 import { TorrentController } from '@/controllers/torrent.controller';
 
+import { BithumenService } from '@/services/torrent-source/bithumen/bithumen.service';
 import { NcoreService } from '@/services/torrent-source/ncore';
 import { TorrentSourceManager } from '@/services/torrent-source';
 import { zValidator } from '@hono/zod-validator';
@@ -62,13 +63,21 @@ const manifestService = new ManifestService(
 const torrentService = new TorrentService();
 const cinemetaService = new CinemeatService();
 const torrentSource = new TorrentSourceManager([
-  env.NCORE_URL && env.NCORE_USERNAME && env.NCORE_PASSWORD
+  env.NCORE_ENABLED && env.NCORE_USERNAME && env.NCORE_PASSWORD
     ? new NcoreService(
         torrentService,
         cinemetaService,
         env.NCORE_URL,
         env.NCORE_USERNAME,
         env.NCORE_PASSWORD,
+      )
+    : null,
+  env.BITHUMEN_ENABLED && env.BITHUMEN_COOKIE
+    ? new BithumenService(
+        torrentService,
+        cinemetaService,
+        env.BITHUMEN_URL,
+        env.BITHUMEN_COOKIE,
       )
     : null,
 ]);

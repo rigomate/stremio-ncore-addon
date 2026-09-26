@@ -1,3 +1,4 @@
+import { isEligibleForCleanup } from './seeding-policy';
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { TorrentSourceManager } from '../torrent-source';
 import { TorrentResponse, TorrentStoreStats } from './types';
@@ -25,7 +26,7 @@ export class TorrentStoreService {
       );
       // Set up log file path in the addon directory
       const logFilePath = join(env.ADDON_DIR, 'torrent-server.log');
-      
+
       this.torrentServerInstance = spawn(executablePath, [
         '-p',
         `${env.TORRENT_SERVER_PORT}`,
@@ -34,22 +35,24 @@ export class TorrentStoreService {
         '-log',
         logFilePath,
       ]);
-      
+
       // Capture and log stdout/stderr from the torrent server
       this.torrentServerInstance.stdout.on('data', (data) => {
         console.log(`[TORRENT-SERVER] ${data.toString().trim()}`);
       });
-      
+
       this.torrentServerInstance.stderr.on('data', (data) => {
         console.error(`[TORRENT-SERVER] ${data.toString().trim()}`);
       });
-      
+
       this.torrentServerInstance.on('error', (error) => {
         console.error(`[TORRENT-SERVER] Process error:`, error);
       });
-      
+
       this.torrentServerInstance.on('exit', (code, signal) => {
-        console.log(`[TORRENT-SERVER] Process exited with code ${code} and signal ${signal}`);
+        console.log(
+          `[TORRENT-SERVER] Process exited with code ${code} and signal ${signal}`,
+        );
       });
     } else {
       let isServerUp = false,
@@ -77,9 +80,12 @@ export class TorrentStoreService {
     }
   }
 
-  public async addTorrent(torrentFilePath: string): Promise<TorrentResponse> {
+  public async addTorrent(
+    torrentFilePath: string,
+    source?: string,
+  ): Promise<TorrentResponse> {
     this.checkServer();
-    const torrent = await this.torrentServerSdk.addTorrent(torrentFilePath);
+    const torrent = await this.torrentServerSdk.addTorrent(torrentFilePath, source);
     return torrent;
   }
 
@@ -138,14 +144,19 @@ export class TorrentStoreService {
   public deleteUnnecessaryTorrents = async () => {
     this.checkServer();
     console.log('Gathering unnecessary torrents...');
-    const deletableInfoHashes = await this.torrentSource.getRemovableInfoHashes();
-    console.log(`Found ${deletableInfoHashes.length} deletable torrents.`);
-    deletableInfoHashes.forEach(async (infoHash) => {
-      const torrent = await this.getTorrent(infoHash);
-      if (torrent) {
-        this.deleteTorrent(infoHash);
+    const torrents = await this.torrentServerSdk.getAllTorrents();
+    const sourceCandidates = new Set(await this.torrentSource.getRemovableInfoHashes());
+    const candidates = torrents.filter((torrent) =>
+      isEligibleForCleanup(torrent, sourceCandidates),
+    );
+    console.log(`Found ${candidates.length} deletable torrents.`);
+    for (const torrent of candidates) {
+      try {
+        await this.deleteTorrent(torrent.infoHash);
         console.log(`Successfully deleted ${torrent.name} - ${torrent.infoHash}.`);
+      } catch (error) {
+        console.error(`Failed to delete torrent ${torrent.infoHash}`, error);
       }
-    });
+    }
   };
 }

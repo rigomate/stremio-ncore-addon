@@ -39,6 +39,12 @@ export const DeleteAfterHitnrun = () => {
           </FormControl>
           <FormLabel>Should delete torrents when hit'n'run period is over</FormLabel>
         </div>
+        <p className="text-sm text-muted-foreground">
+          nCore uses tracker eligibility. BitHUmen torrents are removed after 8 days (192
+          hours) of sharing downloaded pieces, at the next scheduled check. Partial
+          downloads count; full completion is not required. Server downtime does not
+          count.
+        </p>
         <FormMessage />
       </div>
       {isSwitchOn && (

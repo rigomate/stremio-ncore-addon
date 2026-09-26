@@ -18,16 +18,19 @@ import (
 	"github.com/anacrolix/torrent/types/infohash"
 	rangeparser "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/range-parser"
 	responses "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/responses"
+	"github.com/detarkende/stremio-ncore-addon/torrent-server/internal/seedtime"
 	gin "github.com/gin-gonic/gin"
 )
 
 type AddTorrentRequest struct {
-	Path string `json:"path"`
+	Path   string `json:"path"`
+	Source string `json:"source"`
 }
 
 // Server holds the torrent server state
 type Server struct {
 	client      *bittorrent.Client
+	seedTimes   *seedtime.Store
 	downloadDir string
 	mu          sync.RWMutex // Protects torrent operations if needed
 }
@@ -59,6 +62,7 @@ func (s *Server) safeTorrentToResponse(ctx context.Context, torrent *bittorrent.
 	if err := s.waitForInfo(ctx, torrent, 5*time.Second); err != nil {
 		// If info is not available, return partial response
 		return responses.TorrentResponse{
+			Source:   s.seedTimes.Get(torrent.InfoHash().String()).Source,
 			InfoHash: torrent.InfoHash().String(),
 			Name:     "Loading...",
 			Progress: 0,
@@ -68,7 +72,24 @@ func (s *Server) safeTorrentToResponse(ctx context.Context, torrent *bittorrent.
 	}
 
 	// Info is available, safe to call methods
-	return responses.TorrentToResponse(torrent), nil
+	response := responses.TorrentToResponse(torrent)
+	record := s.seedTimes.Get(torrent.InfoHash().String())
+	response.Source = record.Source
+	response.SeededSeconds = record.Seconds
+	return response, nil
+}
+
+// Count availability for upload, including partial torrents, without requiring peers.
+func isSharing(uploadEnabled bool, pieces bittorrent.PieceStateRuns) bool {
+	if !uploadEnabled {
+		return false
+	}
+	for _, piece := range pieces {
+		if piece.Length > 0 && piece.Complete && !piece.Checking && !piece.Hashing && !piece.QueuedForHash && !piece.Marking {
+			return true
+		}
+	}
+	return false
 }
 
 // contextAwareReader wraps an io.Reader to respect context cancellation
@@ -146,11 +167,29 @@ func main() {
 	}
 	defer client.Close()
 
+	seedTimes, err := seedtime.Open(path.Join(downloadDir, ".seed-times.json"))
+	if err != nil {
+		log.Fatalf("Failed to load seeding history: %v", err)
+	}
 	server := &Server{
+		seedTimes:   seedTimes,
 		client:      client,
 		downloadDir: downloadDir,
 	}
 
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			seeding := make(map[string]bool)
+			for _, torrent := range client.Torrents() {
+				seeding[torrent.InfoHash().String()] = torrent.Info() != nil && isSharing(torrent.Seeding(), torrent.PieceStateRuns())
+			}
+			if err := seedTimes.Observe(time.Now(), seeding); err != nil {
+				log.Printf("Failed to save seeding time: %v", err)
+			}
+		}
+	}()
 	log.Printf("[STARTUP] Bittorrent client created successfully")
 
 	// Set up HTTP router
@@ -237,6 +276,10 @@ func main() {
 			return
 		}
 
+		if err := server.seedTimes.Register(torrent.InfoHash().String(), req.Source); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist torrent source"})
+			return
+		}
 		log.Printf("[POST /torrents] Torrent info received")
 
 		// Verify data in background (non-blocking)
@@ -322,6 +365,9 @@ func main() {
 			return
 		}
 
+		if err := server.seedTimes.Remove(infoHashStr); err != nil {
+			log.Printf("Failed to clear seeding history: %v", err)
+		}
 		log.Printf("[DELETE /torrents/:infoHash] Torrent and data deleted successfully")
 		c.JSON(http.StatusOK, gin.H{
 			"message":  "Torrent and data deleted successfully",

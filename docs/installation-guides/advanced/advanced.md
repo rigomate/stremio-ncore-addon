@@ -32,12 +32,41 @@ services:
 >
 > Once the project reaches V1, these things should be more stable and breaking changes will only occur during major upgrades.
 
-## Required environment variables
+## Tracker configuration
 
-| Variable name    | Description                    |
-| ---------------- | ------------------------------ |
-| `NCORE_USERNAME` | Username to your nCore account |
-| `NCORE_PASSWORD` | Password to your nCore account |
+These settings apply to the whole server. Both trackers are optional; configure at least one to receive streams. If neither is enabled, the setup page reports that no torrent sources are configured.
+
+| Variable           | Purpose                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `NCORE_ENABLED`    | `true` or `false`. When omitted, enabled if both nCore credentials are present. |
+| `NCORE_USERNAME`   | Required when nCore is enabled.                                                 |
+| `NCORE_PASSWORD`   | Required when nCore is enabled.                                                 |
+| `BITHUMEN_ENABLED` | `true` or `false`. When omitted, enabled if a BitHUmen cookie is present.       |
+| `BITHUMEN_COOKIE`  | Full browser request Cookie header value; required when BitHUmen is enabled.    |
+| `BITHUMEN_URL`     | Defaults to `https://bithumen.be`.                                              |
+
+For BitHUmen only:
+
+```dotenv
+NCORE_ENABLED=false
+BITHUMEN_ENABLED=true
+BITHUMEN_COOKIE="paste your browser request cookie value here"
+```
+
+For both, set `NCORE_ENABLED=true` and supply `NCORE_USERNAME` and `NCORE_PASSWORD` as well. Explicit `false` disables a tracker even if its credentials remain configured. Restart the addon after changes. In Docker Compose, add these variables under `environment`; use a build containing these changes (the old `0.8.0` image does not contain BitHUmen support).
+
+### Getting the BitHUmen cookie
+
+1. Log in to [BitHUmen](https://bithumen.be) in your browser.
+2. Open Developer Tools → Network, reload the page, and select a request to `bithumen.be/index.php` or `browse.php`.
+3. Copy the value of the **Cookie** request header (without the `Cookie:` label) into `BITHUMEN_COOKIE`. Keep all cookie pairs on one line.
+4. Restart the addon and check the torrent source status in setup/settings.
+
+Treat the cookie as a password. Keep it on the server, out of shared logs and source control. When the session expires, copy a fresh cookie and restart. No BitHUmen username/password login automation is used. The access flow follows [Jackett's BitHUmen definition](https://github.com/Jackett/Jackett/blob/master/src/Jackett.Common/Definitions/bithumen.yml): authenticated IMDb search, with title search as a fallback. Title-only matches are marked as speculative. Searches inspect up to 20 result pages.
+
+BitHUmen downloads only the pieces requested by playback, including read-ahead; it does not download entire torrents or season packs in the background. Verified downloaded pieces remain available for **eight days / 192 accumulated hours of sharing**, even if the torrent stays incomplete. The timer runs whenever at least one verified piece is available and uploading is enabled; it does not require a connected downloader. The torrent server records local seeding time every minute in `DOWNLOADS_DIR/.seed-times.json`, preserving it across restarts without counting downtime or long suspension gaps. This is locally recorded sharing time. Restart the torrent server after updating to stop any full-download requests made by the earlier implementation; existing sharing history is preserved.
+
+Enable **Delete after hit'n'run** to remove eligible BitHUmen torrents at the next scheduled cleanup. With cleanup disabled, they continue seeding until manually removed. Manual deletion remains an explicit override. nCore still uses its tracker-provided removal eligibility. Keep the seeding history file when moving your downloads. Torrents added before source tracking was introduced start being tracked when next played through BitHUmen; earlier seeding time cannot be recovered. Live account verification requires a valid session; automated tests use synthetic tracker responses.
 
 ## Optional environment variables
 

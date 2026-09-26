@@ -1,13 +1,25 @@
 import { z } from 'zod';
 
+const optionalBoolean = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true')
+  .optional();
+
 export const envSchema = z
   .object({
     PORT: z.coerce.number().default(3000),
     HTTPS_PORT: z.coerce.number().default(3443),
     TORRENT_SERVER_PORT: z.coerce.number().default(8080),
     ADDON_DIR: z.string(),
-    NCORE_USERNAME: z.string(),
-    NCORE_PASSWORD: z.string(),
+    NCORE_USERNAME: z.string().optional(),
+    NCORE_PASSWORD: z.string().optional(),
+    NCORE_ENABLED: optionalBoolean,
+    BITHUMEN_ENABLED: optionalBoolean,
+    BITHUMEN_COOKIE: z
+      .string()
+      .regex(/^[^\r\n]*$/, 'Cookie must not contain newlines')
+      .optional(),
+    BITHUMEN_URL: z.string().url().default('https://bithumen.be'),
     TORRENTS_DIR: z.string().optional(),
     DOWNLOADS_DIR: z.string().optional(),
     NCORE_URL: z.string().url().default('https://ncore.pro'),
@@ -15,9 +27,28 @@ export const envSchema = z
     LOCAL_IP_HOSTNAME: z.string().default('local-ip.medicmobile.org'),
     LOCAL_IP_KEYS_URL: z.string().url().default('https://local-ip.medicmobile.org/keys'),
   })
+  .superRefine((env, ctx) => {
+    if (env.NCORE_ENABLED === true && (!env.NCORE_USERNAME || !env.NCORE_PASSWORD)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['NCORE_ENABLED'],
+        message: 'Enabling nCore requires NCORE_USERNAME and NCORE_PASSWORD.',
+      });
+    }
+    if (env.BITHUMEN_ENABLED === true && !env.BITHUMEN_COOKIE?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BITHUMEN_ENABLED'],
+        message: 'Enabling BitHUmen requires BITHUMEN_COOKIE.',
+      });
+    }
+  })
   .transform((env) => {
     return {
       ...env,
+      NCORE_ENABLED:
+        env.NCORE_ENABLED ?? Boolean(env.NCORE_USERNAME && env.NCORE_PASSWORD),
+      BITHUMEN_ENABLED: env.BITHUMEN_ENABLED ?? Boolean(env.BITHUMEN_COOKIE?.trim()),
       TORRENTS_DIR: env.TORRENTS_DIR ?? `${env.ADDON_DIR}/torrents`,
       DOWNLOADS_DIR: env.DOWNLOADS_DIR ?? `${env.ADDON_DIR}/downloads`,
     };

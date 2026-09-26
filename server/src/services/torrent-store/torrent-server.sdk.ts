@@ -40,14 +40,20 @@ export class TorrentServerSdk {
     }
   }
 
-  public async addTorrent(torrentFilePath: string): Promise<TorrentResponse> {
+  public async addTorrent(
+    torrentFilePath: string,
+    source?: string,
+  ): Promise<TorrentResponse> {
     try {
       const req = await fetch(`${this.url}/torrents`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ path: torrentFilePath } satisfies AddTorrentRequest),
+        body: JSON.stringify({
+          path: torrentFilePath,
+          source,
+        } satisfies AddTorrentRequest),
       });
       if (!req.ok) {
         const responseText = await req.text();

@@ -94,6 +94,7 @@ export interface TorrentSource {
     params: Pick<StreamQuery, 'imdbId' | 'type' | 'episode' | 'season'>,
   ) => Promise<TorrentDetails[]>;
   getTorrentUrlBySourceId: (sourceId: string) => Promise<string | null>;
+  getDownloadHeaders?: () => Record<string, string>;
   getRemovableInfoHashes: () => Promise<string[]>;
   getConfigIssues: () => Promise<string | null>;
 }

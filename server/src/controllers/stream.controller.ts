@@ -73,7 +73,7 @@ export class StreamController {
 
     let torrent = await this.torrentStoreService.getTorrent(infoHash);
 
-    if (!torrent) {
+    if (!torrent || (sourceName === 'bithumen' && torrent.source !== 'bithumen')) {
       const torrentUrl = await this.torrentSource.getTorrentUrlBySourceId({
         sourceId,
         sourceName,
@@ -83,8 +83,11 @@ export class StreamController {
           message: 'Torrent not found',
         });
       }
-      const torrentFilePath = await this.torrentService.downloadTorrentFile(torrentUrl);
-      torrent = await this.torrentStoreService.addTorrent(torrentFilePath);
+      const torrentFilePath = await this.torrentService.downloadTorrentFile(
+        torrentUrl,
+        this.torrentSource.getDownloadHeaders(sourceName),
+      );
+      torrent = await this.torrentStoreService.addTorrent(torrentFilePath, sourceName);
     }
     const file = torrent.files[Number(fileIdx)]!;
 

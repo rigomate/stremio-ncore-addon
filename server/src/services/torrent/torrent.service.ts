@@ -1,5 +1,4 @@
 import parseTorrent from 'parse-torrent';
-import contentDisposition from 'content-disposition';
 import type { ParsedTorrentDetails } from './types';
 import { writeFileWithCreateDir } from '@/utils/files';
 import { env } from '@/env';
@@ -11,13 +10,19 @@ export class TorrentService {
     max: 1_000,
     ttl: DEFAULT_TTL,
     ttlAutopurge: true,
-    generateKey: (torrentUrl) => torrentUrl,
+    generateKey: (torrentUrl, headers = {}) => JSON.stringify([torrentUrl, headers]),
   })
   public async downloadAndParseTorrent(
     torrentUrl: string,
+    headers: Record<string, string> = {},
   ): Promise<ParsedTorrentDetails> {
     try {
-      const torrentResponse = await fetch(torrentUrl);
+      const torrentResponse = await fetch(torrentUrl, {
+        headers,
+        redirect: Object.keys(headers).length ? 'error' : 'follow',
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!torrentResponse.ok) throw new Error('Torrent download failed');
       const buffer = await torrentResponse.arrayBuffer();
       const torrentData = await parseTorrent(new Uint8Array(buffer));
       return {
@@ -38,17 +43,20 @@ export class TorrentService {
   /**
    * @returns the path to the downloaded torrent file
    */
-  public async downloadTorrentFile(torrentUrl: string): Promise<string> {
+  public async downloadTorrentFile(
+    torrentUrl: string,
+    headers: Record<string, string> = {},
+  ): Promise<string> {
     try {
-      const torrentReq = await fetch(torrentUrl);
+      const torrentReq = await fetch(torrentUrl, {
+        headers,
+        redirect: Object.keys(headers).length ? 'error' : 'follow',
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!torrentReq.ok) throw new Error('Torrent download failed');
       const torrentArrayBuffer = await torrentReq.arrayBuffer();
       const parsedTorrent = await parseTorrent(new Uint8Array(torrentArrayBuffer));
-      // torrent file name without the .torrent extension
-      const torrentFileName = contentDisposition
-        .parse(torrentReq.headers.get('content-disposition') ?? '')
-        .parameters.filename?.replace(/\.torrent$/i, '');
-
-      const torrentFilePath = `${env.TORRENTS_DIR}/${torrentFileName}-${parsedTorrent.infoHash}.torrent`;
+      const torrentFilePath = `${env.TORRENTS_DIR}/${parsedTorrent.infoHash}.torrent`;
 
       writeFileWithCreateDir(torrentFilePath, Buffer.from(torrentArrayBuffer));
       return torrentFilePath;

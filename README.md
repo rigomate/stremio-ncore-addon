@@ -2,7 +2,7 @@
 
 # nCore addon
 
-A self-hostable Stremio addon that lets you stream content straight from nCore.
+A self-hostable Stremio addon that lets you stream content from nCore and BitHUmen. Enable either tracker or both.
 
 https://github.com/user-attachments/assets/9fa6c837-78de-44fe-b1da-ae63ff44631e
 
@@ -53,7 +53,7 @@ The addon will even rank them based on your configured preferences (language + r
 View answer
 </summary>
 
-- nCore account (that isn't banned)
+- An active nCore and/or BitHUmen account
 - A computer to host this program on
   - Docker needs to be installed
   - Needs enough free space where the downloaded files will fit.
@@ -98,3 +98,9 @@ If you're not familiar with selfhosting, follow one of these guides:
 - [x] Integrate with [local-ip.medicmobile.org](https://local-ip.medicmobile.org/) to allow https for local network
 - [ ] Add more unit tests to backend
 - [ ] Add unit tests to frontend
+
+## Choosing trackers
+
+Tracker configuration is server-wide. Enable nCore, BitHUmen, or both with environment variables; see the [tracker setup instructions](docs/installation-guides/advanced/advanced.md#tracker-configuration). Existing nCore credentials continue to enable nCore automatically when `NCORE_ENABLED` is omitted.
+
+BitHUmen uses a browser session cookie (`BITHUMEN_COOKIE`). Its torrents support the same movie/episode selection and playback flow, and download only the pieces needed for playback, including read-ahead. Downloaded pieces remain available for sharing for eight days (192 accumulated hours), without requiring the torrent to finish. With automatic cleanup enabled, they are removed on the next scheduled cleanup after that period. Seeding time survives restarts; server downtime does not count.

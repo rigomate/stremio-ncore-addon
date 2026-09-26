@@ -34,6 +34,8 @@ On nCore you need to seed torrents for a set amount of time. If you stop seeding
 To avoid this, SNA seeds your torrents for you after you download them.
 If you want to save space on your server, then you might want to delete the torrents that don't need to be seeded anymore.
 
+BitHUmen downloads only what playback requests (including read-ahead) and keeps sharing those pieces. Partial torrents become eligible for cleanup after eight days (192 hours) of locally recorded sharing time; full completion is not required. The count survives restarts and excludes server downtime. Disabling cleanup keeps them seeding beyond eight days.
+
 If you turn this toggle on, then the addon will periodically check which torrents can be safely deleted from your drive.
 You have to provide a cron expression to make this work, but the default value might be good enough for you.
 

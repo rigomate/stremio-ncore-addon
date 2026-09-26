@@ -16,6 +16,8 @@ export interface TorrentFileResponse {
 }
 
 export interface TorrentResponse {
+  source?: string;
+  seededSeconds?: number;
   infoHash: InfoHash;
   name: string;
   progress: number;
@@ -25,5 +27,6 @@ export interface TorrentResponse {
 }
 
 export interface AddTorrentRequest {
+  source?: string;
   path: string;
 }
