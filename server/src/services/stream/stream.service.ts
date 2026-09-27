@@ -48,6 +48,7 @@ export class StreamService {
       preferredLanguage,
     );
     return {
+      name: torrent.sourceName === 'bithumen' ? 'BitHUmen' : 'nCore',
       url: `${config.addonUrl}/api/auth/${deviceToken}/stream/play/${sourceName}/${sourceId}/${infoHash}/${fileIndex}`,
       description,
       behaviorHints: {
